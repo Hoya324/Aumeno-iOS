@@ -1,571 +1,539 @@
-//
-//  DatabaseManager.swift
-//  Aumeno
-//
-//  Created by Claude Code
-//
-
 import Foundation
 import SQLite3
 
+// MARK: - Error Enum
 enum DatabaseError: Error {
     case openDatabaseFailed
     case prepareFailed(String)
     case stepFailed(String)
     case bindFailed(String)
+    case notFound
+    case invalidData
+    case noScheduleFound
 }
 
+// MARK: - DatabaseManager Class
 final class DatabaseManager {
     static let shared = DatabaseManager()
-
+    
     private var db: OpaquePointer?
     private let dbQueue = DispatchQueue(label: "com.aumeno.database", qos: .userInitiated)
-
+    
     private init() {
         do {
             try openDatabase()
-            try createTable()
+            try createTables()
+            try migrateOldTables() // Ensure migrations run after table creation
+            try setupDefaultTags() // Call to setup default tags
         } catch {
             print("❌ Database initialization failed: \(error)")
+            // In a real app, you would handle this error more gracefully
+            fatalError("Database initialization failed: \(error)")
         }
     }
-
+    
     deinit {
         closeDatabase()
     }
-
+    
     // MARK: - Database Setup
-
     private func openDatabase() throws {
-        let fileURL = try FileManager.default
-            .url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            .appendingPathComponent("Aumeno")
-
-        try FileManager.default.createDirectory(at: fileURL, withIntermediateDirectories: true)
-
-        let dbPath = fileURL.appendingPathComponent("aumeno.sqlite").path
-
-        if sqlite3_open(dbPath, &db) != SQLITE_OK {
+        let appGroupID = "group.com.sandbox.Aumeno"
+        guard let fileURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) else {
             throw DatabaseError.openDatabaseFailed
         }
-
-        print("✅ Database opened at: \(dbPath)")
+        let dbPath = fileURL.appendingPathComponent("aumeno.sqlite").path
+        
+        if sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil) != SQLITE_OK {
+            throw DatabaseError.openDatabaseFailed
+        }
+        print("✅ Unified Database opened at shared container: \(dbPath)")
     }
-
-    private func createTable() throws {
-        // 새로운 스키마로 테이블 생성
-        let createTableQuery = """
-        CREATE TABLE IF NOT EXISTS meetings (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            scheduledTime REAL NOT NULL,
-            note TEXT NOT NULL DEFAULT '',
-            source TEXT NOT NULL DEFAULT 'manual',
-            slackConfigID TEXT,
-            slackTimestamp TEXT,
-            createdAt REAL NOT NULL,
-            notificationSent INTEGER NOT NULL DEFAULT 0,
-            location TEXT,
-            notionLink TEXT
-        );
-        """
-
-        var statement: OpaquePointer?
-
-        if sqlite3_prepare_v2(db, createTableQuery, -1, &statement, nil) != SQLITE_OK {
-            let error = String(cString: sqlite3_errmsg(db))
-            throw DatabaseError.prepareFailed(error)
-        }
-
-        defer {
-            sqlite3_finalize(statement)
-        }
-
-        if sqlite3_step(statement) != SQLITE_DONE {
-            let error = String(cString: sqlite3_errmsg(db))
-            throw DatabaseError.stepFailed(error)
-        }
-
-        // 삭제된 Slack 메시지 추적 테이블
-        let createDeletedTableQuery = """
-        CREATE TABLE IF NOT EXISTS deleted_slack_messages (
-            slackTimestamp TEXT PRIMARY KEY,
-            deletedAt REAL NOT NULL
-        );
-        """
-
-        var deletedStatement: OpaquePointer?
-        if sqlite3_prepare_v2(db, createDeletedTableQuery, -1, &deletedStatement, nil) != SQLITE_OK {
-            let error = String(cString: sqlite3_errmsg(db))
-            throw DatabaseError.prepareFailed(error)
-        }
-
-        defer {
-            sqlite3_finalize(deletedStatement)
-        }
-
-        if sqlite3_step(deletedStatement) != SQLITE_DONE {
-            let error = String(cString: sqlite3_errmsg(db))
-            throw DatabaseError.stepFailed(error)
-        }
-
-        // 기존 테이블이 있다면 마이그레이션
-        try migrateOldSchemaIfNeeded()
-
-        print("✅ Table created/verified")
-    }
-
-    // 기존 스키마에서 새 스키마로 마이그레이션
-    private func migrateOldSchemaIfNeeded() throws {
-        // Check if all required columns exist
-        let pragmaQuery = "PRAGMA table_info(meetings);"
-        var statement: OpaquePointer?
-
-        if sqlite3_prepare_v2(db, pragmaQuery, -1, &statement, nil) != SQLITE_OK {
-            return // 마이그레이션 불필요
-        }
-
-        defer {
-            sqlite3_finalize(statement)
-        }
-
-        var hasScheduledTime = false
-        var hasLocation = false
-        var hasNotionLink = false
-
-        while sqlite3_step(statement) == SQLITE_ROW {
-            let columnName = String(cString: sqlite3_column_text(statement, 1))
-            if columnName == "scheduledTime" {
-                hasScheduledTime = true
-            } else if columnName == "location" {
-                hasLocation = true
-            } else if columnName == "notionLink" {
-                hasNotionLink = true
-            }
-        }
-
-        // 마이그레이션이 필요하면 실행
-        if !hasScheduledTime {
-            try performMigration()
-        } else if !hasLocation || !hasNotionLink {
-            // Add missing columns
-            try addMissingColumns(hasLocation: hasLocation, hasNotionLink: hasNotionLink)
+    
+    private func closeDatabase() {
+        if let db = db {
+            sqlite3_close(db)
+            self.db = nil
         }
     }
-
-    private func performMigration() throws {
-        print("🔄 Migrating database schema...")
-
-        // 1. 백업 테이블 생성
-        let backupQuery = "ALTER TABLE meetings RENAME TO meetings_old;"
-        try executeSQL(backupQuery)
-
-        // 2. 새 테이블 생성
-        let createNewTable = """
-        CREATE TABLE meetings (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            scheduledTime REAL NOT NULL,
-            note TEXT NOT NULL DEFAULT '',
-            source TEXT NOT NULL DEFAULT 'slack',
-            slackConfigID TEXT,
-            slackTimestamp TEXT,
-            createdAt REAL NOT NULL,
-            notificationSent INTEGER NOT NULL DEFAULT 0,
-            location TEXT,
-            notionLink TEXT
-        );
-        """
-        try executeSQL(createNewTable)
-
-        // 3. 데이터 복사 (기존 데이터는 모두 Slack 출처로 간주)
-        let copyData = """
-        INSERT INTO meetings (id, title, scheduledTime, note, source, slackTimestamp, createdAt, notificationSent)
-        SELECT id, title, startTime, note, 'slack', id, startTime, 0 FROM meetings_old;
-        """
-        try executeSQL(copyData)
-
-        // 4. 백업 테이블 삭제
-        try executeSQL("DROP TABLE meetings_old;")
-
-        print("✅ Migration completed")
-    }
-
-    // Add missing columns to existing table
-    private func addMissingColumns(hasLocation: Bool, hasNotionLink: Bool) throws {
-        print("🔄 Adding missing columns to database...")
-
-        if !hasLocation {
-            try executeSQL("ALTER TABLE meetings ADD COLUMN location TEXT;")
-            print("✅ Added location column")
-        }
-
-        if !hasNotionLink {
-            try executeSQL("ALTER TABLE meetings ADD COLUMN notionLink TEXT;")
-            print("✅ Added notionLink column")
-        }
-    }
-
+    
     private func executeSQL(_ query: String) throws {
         var statement: OpaquePointer?
-
-        if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK {
-            let error = String(cString: sqlite3_errmsg(db))
-            throw DatabaseError.prepareFailed(error)
+        defer { sqlite3_finalize(statement) }
+        
+        guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else {
+            throw DatabaseError.prepareFailed(String(cString: sqlite3_errmsg(db)))
         }
-
-        defer {
-            sqlite3_finalize(statement)
-        }
-
-        if sqlite3_step(statement) != SQLITE_DONE {
-            let error = String(cString: sqlite3_errmsg(db))
-            throw DatabaseError.stepFailed(error)
+        
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw DatabaseError.stepFailed(String(cString: sqlite3_errmsg(db)))
         }
     }
-
-    private func closeDatabase() {
-        if sqlite3_close(db) != SQLITE_OK {
-            print("❌ Failed to close database")
-        }
-        db = nil
-    }
-
-    // MARK: - CRUD Operations
-
-    func insertMeeting(_ meeting: Meeting) throws {
+    
+    private func createTables() throws {
         try dbQueue.sync {
-            let insertQuery = """
-            INSERT OR REPLACE INTO meetings (
-                id, title, scheduledTime, note, source,
-                slackConfigID, slackTimestamp, createdAt, notificationSent,
-                location, notionLink
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            """
-
-            var statement: OpaquePointer?
-
-            if sqlite3_prepare_v2(db, insertQuery, -1, &statement, nil) != SQLITE_OK {
-                let error = String(cString: sqlite3_errmsg(db))
-                throw DatabaseError.prepareFailed(error)
-            }
-
-            defer {
-                sqlite3_finalize(statement)
-            }
-
-            // Use SQLITE_TRANSIENT for string safety
-            let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-
-            // Bind parameters
-            sqlite3_bind_text(statement, 1, (meeting.id as NSString).utf8String, -1, SQLITE_TRANSIENT)
-            sqlite3_bind_text(statement, 2, (meeting.title as NSString).utf8String, -1, SQLITE_TRANSIENT)
-            sqlite3_bind_double(statement, 3, meeting.scheduledTime.timeIntervalSince1970)
-            sqlite3_bind_text(statement, 4, (meeting.note as NSString).utf8String, -1, SQLITE_TRANSIENT)
-            sqlite3_bind_text(statement, 5, (meeting.source.rawValue as NSString).utf8String, -1, SQLITE_TRANSIENT)
-
-            if let slackConfigID = meeting.slackConfigID {
-                sqlite3_bind_text(statement, 6, (slackConfigID as NSString).utf8String, -1, SQLITE_TRANSIENT)
-            } else {
-                sqlite3_bind_null(statement, 6)
-            }
-
-            if let slackTimestamp = meeting.slackTimestamp {
-                sqlite3_bind_text(statement, 7, (slackTimestamp as NSString).utf8String, -1, SQLITE_TRANSIENT)
-            } else {
-                sqlite3_bind_null(statement, 7)
-            }
-
-            sqlite3_bind_double(statement, 8, meeting.createdAt.timeIntervalSince1970)
-            sqlite3_bind_int(statement, 9, meeting.notificationSent ? 1 : 0)
-
-            if let location = meeting.location {
-                sqlite3_bind_text(statement, 10, (location as NSString).utf8String, -1, SQLITE_TRANSIENT)
-            } else {
-                sqlite3_bind_null(statement, 10)
-            }
-
-            if let notionLink = meeting.notionLink {
-                sqlite3_bind_text(statement, 11, (notionLink as NSString).utf8String, -1, SQLITE_TRANSIENT)
-            } else {
-                sqlite3_bind_null(statement, 11)
-            }
-
-            if sqlite3_step(statement) != SQLITE_DONE {
-                let error = String(cString: sqlite3_errmsg(db))
-                throw DatabaseError.stepFailed(error)
-            }
+            // Schedules Table
+            try executeSQL("""
+            CREATE TABLE IF NOT EXISTS schedules (
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, startDateTime REAL NOT NULL, endDateTime REAL, note TEXT NOT NULL DEFAULT '',
+                type TEXT NOT NULL DEFAULT 'task', source TEXT NOT NULL DEFAULT 'manual', workspaceID TEXT, channelID TEXT,
+                channelName TEXT, slackTimestamp TEXT, slackLink TEXT, slackMessageText TEXT, workspaceColor TEXT,
+                createdAt REAL NOT NULL, notificationSent INTEGER NOT NULL DEFAULT 1, location TEXT, links TEXT,
+                tagID TEXT,
+                isDone INTEGER NOT NULL DEFAULT 0
+            );
+            """)
+            
+            // Tags Table
+            try executeSQL("""
+            CREATE TABLE IF NOT EXISTS tags (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                color TEXT NOT NULL
+            );
+            """)
+            
+            // Deleted Messages Table
+            try executeSQL("CREATE TABLE IF NOT EXISTS deleted_slack_messages (slackTimestamp TEXT PRIMARY KEY, deletedAt REAL NOT NULL);")
+            
+            // Configurations Table
+            try executeSQL("""
+            CREATE TABLE IF NOT EXISTS slack_configurations (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, channelName TEXT, token TEXT NOT NULL, channelID TEXT NOT NULL,
+                keywords TEXT, isEnabled INTEGER NOT NULL DEFAULT 1, createdAt REAL NOT NULL,
+                color TEXT NOT NULL DEFAULT '#808080', userID TEXT, teamID TEXT
+            );
+            """)
+            print("✅ All tables created/verified")
         }
     }
-
-    func fetchAllMeetings() throws -> [Meeting] {
+    
+    // MARK: - Migrations
+    private func migrateOldTables() throws {
+        // This is where schema migrations for existing installations would go
+        // For simplicity, we'll assume new installations or completely fresh databases for now.
+        // A full migration system would check existing schema versions and apply incremental changes.
+        
+        // Add 'tagID' column if it doesn't exist
         try dbQueue.sync {
-            let query = """
-            SELECT id, title, scheduledTime, note, source,
-                   slackConfigID, slackTimestamp, createdAt, notificationSent,
-                   location, notionLink
-            FROM meetings ORDER BY scheduledTime DESC;
-            """
-
-            var statement: OpaquePointer?
-
-            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK {
-                let error = String(cString: sqlite3_errmsg(db))
-                throw DatabaseError.prepareFailed(error)
+            if try !columnExists("tagID", in: "schedules") {
+                try executeSQL("ALTER TABLE schedules ADD COLUMN tagID TEXT;")
             }
+            // Existing 'tag' and 'tagColor' columns can remain but will not be used by the app's model.
 
-            defer {
-                sqlite3_finalize(statement)
-            }
-
-            var meetings: [Meeting] = []
-
-            while sqlite3_step(statement) == SQLITE_ROW {
-                let id = String(cString: sqlite3_column_text(statement, 0))
-                let title = String(cString: sqlite3_column_text(statement, 1))
-                let scheduledTime = Date(timeIntervalSince1970: sqlite3_column_double(statement, 2))
-                let note = String(cString: sqlite3_column_text(statement, 3))
-                let sourceString = String(cString: sqlite3_column_text(statement, 4))
-                let source = MeetingSource(rawValue: sourceString) ?? .manual
-
-                let slackConfigID: String? = if let text = sqlite3_column_text(statement, 5) {
-                    String(cString: text)
-                } else {
-                    nil
-                }
-
-                let slackTimestamp: String? = if let text = sqlite3_column_text(statement, 6) {
-                    String(cString: text)
-                } else {
-                    nil
-                }
-
-                let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(statement, 7))
-                let notificationSent = sqlite3_column_int(statement, 8) == 1
-
-                let location: String? = if let text = sqlite3_column_text(statement, 9) {
-                    String(cString: text)
-                } else {
-                    nil
-                }
-
-                let notionLink: String? = if let text = sqlite3_column_text(statement, 10) {
-                    String(cString: text)
-                } else {
-                    nil
-                }
-
-                let meeting = Meeting(
-                    id: id,
-                    title: title,
-                    scheduledTime: scheduledTime,
-                    note: note,
-                    source: source,
-                    slackConfigID: slackConfigID,
-                    slackTimestamp: slackTimestamp,
-                    createdAt: createdAt,
-                    notificationSent: notificationSent,
-                    location: location,
-                    notionLink: notionLink
-                )
-                meetings.append(meeting)
-            }
-
-            return meetings
-        }
-    }
-
-    func updateMeetingNote(id: String, note: String) throws {
-        try dbQueue.sync {
-            let updateQuery = "UPDATE meetings SET note = ? WHERE id = ?;"
-
-            var statement: OpaquePointer?
-
-            if sqlite3_prepare_v2(db, updateQuery, -1, &statement, nil) != SQLITE_OK {
-                let error = String(cString: sqlite3_errmsg(db))
-                throw DatabaseError.prepareFailed(error)
-            }
-
-            defer {
-                sqlite3_finalize(statement)
-            }
-
-            sqlite3_bind_text(statement, 1, (note as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(statement, 2, (id as NSString).utf8String, -1, nil)
-
-            if sqlite3_step(statement) != SQLITE_DONE {
-                let error = String(cString: sqlite3_errmsg(db))
-                throw DatabaseError.stepFailed(error)
+            // Add 'teamID' column to 'slack_configurations' if it doesn't exist
+            if try !columnExists("teamID", in: "slack_configurations") {
+                try executeSQL("ALTER TABLE slack_configurations ADD COLUMN teamID TEXT;")
             }
         }
     }
-
-    func deleteMeeting(id: String) throws {
-        try dbQueue.sync {
-            // First, check if this is a Slack meeting
-            let checkQuery = "SELECT slackTimestamp FROM meetings WHERE id = ?;"
-            var checkStatement: OpaquePointer?
-
-            if sqlite3_prepare_v2(db, checkQuery, -1, &checkStatement, nil) == SQLITE_OK {
-                let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-                sqlite3_bind_text(checkStatement, 1, (id as NSString).utf8String, -1, SQLITE_TRANSIENT)
-
-                if sqlite3_step(checkStatement) == SQLITE_ROW,
-                   let slackTimestampText = sqlite3_column_text(checkStatement, 0) {
-                    let slackTimestamp = String(cString: slackTimestampText)
-
-                    // Record as deleted Slack message
-                    try recordDeletedSlackMessage(slackTimestamp)
-                    print("📝 Recorded deleted Slack message: \(slackTimestamp)")
-                }
-                sqlite3_finalize(checkStatement)
-            }
-
-            // Delete the meeting
-            let deleteQuery = "DELETE FROM meetings WHERE id = ?;"
-            var statement: OpaquePointer?
-
-            if sqlite3_prepare_v2(db, deleteQuery, -1, &statement, nil) != SQLITE_OK {
-                let error = String(cString: sqlite3_errmsg(db))
-                throw DatabaseError.prepareFailed(error)
-            }
-
-            defer {
-                sqlite3_finalize(statement)
-            }
-
-            let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-            sqlite3_bind_text(statement, 1, (id as NSString).utf8String, -1, SQLITE_TRANSIENT)
-
-            print("🗑️ Executing DELETE FROM meetings WHERE id = '\(id)'")
-
-            if sqlite3_step(statement) != SQLITE_DONE {
-                let error = String(cString: sqlite3_errmsg(db))
-                print("❌ Failed to delete meeting from database: \(error)")
-                throw DatabaseError.stepFailed(error)
-            }
-
-            let rowsAffected = sqlite3_changes(db)
-            print("✅ Database deletion successful: \(rowsAffected) row(s) affected for id '\(id)'")
-        }
-    }
-
-    // 삭제된 Slack 메시지 기록
-    private func recordDeletedSlackMessage(_ slackTimestamp: String) throws {
-        let insertQuery = "INSERT OR IGNORE INTO deleted_slack_messages (slackTimestamp, deletedAt) VALUES (?, ?);"
+    
+    private func columnExists(_ columnName: String, in tableName: String) throws -> Bool {
+        let query = "PRAGMA table_info(\(tableName));"
         var statement: OpaquePointer?
-
-        if sqlite3_prepare_v2(db, insertQuery, -1, &statement, nil) != SQLITE_OK {
-            let error = String(cString: sqlite3_errmsg(db))
-            throw DatabaseError.prepareFailed(error)
+        defer { sqlite3_finalize(statement) }
+        if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK { throw DatabaseError.prepareFailed("PRAGMA query failed") }
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let name = sqlite3_column_text(statement, 1), String(cString: name) == columnName { return true }
         }
-
-        defer {
-            sqlite3_finalize(statement)
-        }
-
-        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        sqlite3_bind_text(statement, 1, (slackTimestamp as NSString).utf8String, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_double(statement, 2, Date().timeIntervalSince1970)
-
-        if sqlite3_step(statement) != SQLITE_DONE {
-            let error = String(cString: sqlite3_errmsg(db))
-            throw DatabaseError.stepFailed(error)
+        return false
+    }
+    
+    // MARK: - Tag CRUD
+    func insertTag(_ tag: Tag) throws {
+        try dbQueue.sync {
+            let query = "INSERT OR REPLACE INTO tags (id, name, color) VALUES (?,?,?);"
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK { throw DatabaseError.prepareFailed(String(cString: sqlite3_errmsg(db))) }
+            
+            let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+            
+            sqlite3_bind_text(statement, 1, (tag.id as NSString).utf8String, -1, transient)
+            sqlite3_bind_text(statement, 2, (tag.name as NSString).utf8String, -1, transient)
+            sqlite3_bind_text(statement, 3, (tag.color as NSString).utf8String, -1, transient)
+            
+            if sqlite3_step(statement) != SQLITE_DONE { throw DatabaseError.stepFailed(String(cString: sqlite3_errmsg(db))) }
         }
     }
+    
+    func fetchAllTags() throws -> [Tag] {
+        try dbQueue.sync {
+            let query = "SELECT id, name, color FROM tags ORDER BY name ASC;"
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK { throw DatabaseError.prepareFailed(String(cString: sqlite3_errmsg(db))) }
+            
+            var tags: [Tag] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let id = sqlite3_column_text(statement, 0).map({ String(cString: $0) }),
+                      let name = sqlite3_column_text(statement, 1).map({ String(cString: $0) }),
+                      let color = sqlite3_column_text(statement, 2).map({ String(cString: $0) })
+                else { continue }
+                
+                tags.append(Tag(id: id, name: name, color: color))
+            }
+            return tags
+        }
+    }
+    
+    func fetchTag(id: String) throws -> Tag? {
+        try dbQueue.sync {
+            let query = "SELECT id, name, color FROM tags WHERE id = ?;"
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK { throw DatabaseError.prepareFailed(String(cString: sqlite3_errmsg(db))) }
+            
+            sqlite3_bind_text(statement, 1, (id as NSString).utf8String, -1, nil)
+            
+            if sqlite3_step(statement) == SQLITE_ROW {
+                guard let id = sqlite3_column_text(statement, 0).map({ String(cString: $0) }),
+                      let name = sqlite3_column_text(statement, 1).map({ String(cString: $0) }),
+                      let color = sqlite3_column_text(statement, 2).map({ String(cString: $0) })
+                else { return nil }
+                return Tag(id: id, name: name, color: color)
+            }
+            return nil
+        }
+    }
+    
+    func deleteTag(id: String) throws {
+        try dbQueue.sync {
+            let query = "DELETE FROM tags WHERE id = ?;"
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK { throw DatabaseError.prepareFailed(String(cString: sqlite3_errmsg(db))) }
+            sqlite3_bind_text(statement, 1, (id as NSString).utf8String, -1, nil)
+            if sqlite3_step(statement) != SQLITE_DONE { throw DatabaseError.stepFailed(String(cString: sqlite3_errmsg(db))) }
+        }
+    }
+    
+    private func setupDefaultTags() throws {
+        // Define default tags
+        let defaultTags = [
+            Tag(id: "default-meeting", name: "회의", color: "#007AFF"), // Blue
+            Tag(id: "default-mention", name: "언급됨", color: "#FFA500")  // Orange
+        ]
+        
+        for tag in defaultTags {
+            if (try? fetchTag(id: tag.id)) == nil { // Check if tag already exists
+                try insertTag(tag)
+                print("✅ [DatabaseManager] Inserted default tag: \(tag.name)")
+            }
+        }
+    }
+    
+    // MARK: - Schedule CRUD
+    func insertSchedule(_ schedule: Schedule) throws {
+        try dbQueue.sync {
+            let query = "INSERT OR REPLACE INTO schedules (id, title, startDateTime, endDateTime, note, type, source, workspaceID, channelID, channelName, slackTimestamp, slackLink, slackMessageText, workspaceColor, createdAt, notificationSent, location, links, tagID, isDone) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);"
+            print("  [DatabaseManager] Preparing to execute query: \(query)")
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK {
+                let errorMsg = String(cString: sqlite3_errmsg(db))
+                print("  [DatabaseManager] ❌ Failed to prepare statement: \(errorMsg)")
+                throw DatabaseError.prepareFailed(errorMsg)
+            }
+            print("  [DatabaseManager] Statement prepared successfully.")
+            
+            let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+            
+            sqlite3_bind_text(statement, 1, (schedule.id as NSString).utf8String, -1, transient)
+            sqlite3_bind_text(statement, 2, (schedule.title as NSString).utf8String, -1, transient)
+            sqlite3_bind_double(statement, 3, schedule.startDateTime.timeIntervalSince1970)
+            if let endDateTime = schedule.endDateTime {
+                sqlite3_bind_double(statement, 4, endDateTime.timeIntervalSince1970)
+            } else {
+                sqlite3_bind_null(statement, 4)
+            }
+            sqlite3_bind_text(statement, 5, (schedule.note as NSString).utf8String, -1, transient)
+            sqlite3_bind_text(statement, 6, (schedule.type.rawValue as NSString).utf8String, -1, transient)
+            sqlite3_bind_text(statement, 7, (schedule.source.rawValue as NSString).utf8String, -1, transient)
+            
+            if let val = schedule.workspaceID { sqlite3_bind_text(statement, 8, (val as NSString).utf8String, -1, transient) } else { sqlite3_bind_null(statement, 8) }
+            if let val = schedule.channelID { sqlite3_bind_text(statement, 9, (val as NSString).utf8String, -1, transient) } else { sqlite3_bind_null(statement, 9) }
+            if let val = schedule.channelName { sqlite3_bind_text(statement, 10, (val as NSString).utf8String, -1, transient) } else { sqlite3_bind_null(statement, 10) }
+            if let val = schedule.slackTimestamp { sqlite3_bind_text(statement, 11, (val as NSString).utf8String, -1, transient) } else { sqlite3_bind_null(statement, 11) }
+            if let val = schedule.slackLink { sqlite3_bind_text(statement, 12, (val as NSString).utf8String, -1, transient) } else { sqlite3_bind_null(statement, 12) }
+            if let val = schedule.slackMessageText { sqlite3_bind_text(statement, 13, (val as NSString).utf8String, -1, transient) } else { sqlite3_bind_null(statement, 13) }
+            if let val = schedule.workspaceColor { sqlite3_bind_text(statement, 14, (val as NSString).utf8String, -1, transient) } else { sqlite3_bind_null(statement, 14) }
+            
+            sqlite3_bind_double(statement, 15, schedule.createdAt.timeIntervalSince1970)
+            sqlite3_bind_int(statement, 16, schedule.notificationSent ? 1 : 0)
+            
+            if let val = schedule.location { sqlite3_bind_text(statement, 17, (val as NSString).utf8String, -1, transient) } else { sqlite3_bind_null(statement, 17) }
+            
+            if let links = schedule.links, let data = try? JSONEncoder().encode(links), let json = String(data: data, encoding: .utf8) {
+                sqlite3_bind_text(statement, 18, (json as NSString).utf8String, -1, transient)
+            } else {
+                sqlite3_bind_null(statement, 18)
+            }
+            
+            if let val = schedule.tagID { sqlite3_bind_text(statement, 19, (val as NSString).utf8String, -1, transient) } else { sqlite3_bind_null(statement, 19) }
+            
+            sqlite3_bind_int(statement, 20, schedule.isDone ? 1 : 0)
+            
+            print("  [DatabaseManager] Attempting to step statement.")
+            if sqlite3_step(statement) != SQLITE_DONE {
+                let errorMsg = String(cString: sqlite3_errmsg(db))
+                print("  [DatabaseManager] ❌ Failed to step statement: \(errorMsg)")
+                throw DatabaseError.stepFailed(errorMsg)
+            }
+            print("  [DatabaseManager] ✅ Statement stepped successfully.")
+        }
+    }
+    
+    func fetchAllSchedules() throws -> [Schedule] {
+        try dbQueue.sync {
+            let query = "SELECT id, title, startDateTime, endDateTime, note, type, source, workspaceID, channelID, channelName, slackTimestamp, slackLink, slackMessageText, workspaceColor, createdAt, notificationSent, location, links, tagID, isDone FROM schedules ORDER BY startDateTime DESC;"
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK { throw DatabaseError.prepareFailed(String(cString: sqlite3_errmsg(db))) }
+            
+            var schedules: [Schedule] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let id = sqlite3_column_text(statement, 0).map({ String(cString: $0) }),
+                      let title = sqlite3_column_text(statement, 1).map({ String(cString: $0) }),
+                      let note = sqlite3_column_text(statement, 4).map({ String(cString: $0) }),
+                      let typeRaw = sqlite3_column_text(statement, 5).map({ String(cString: $0) }),
+                      let sourceRaw = sqlite3_column_text(statement, 6).map({ String(cString: $0) })
+                else { continue }
+                
+                let startDateTime = Date(timeIntervalSince1970: sqlite3_column_double(statement, 2))
+                let endDateTime: Date? = sqlite3_column_type(statement, 3) == SQLITE_NULL ? nil : Date(timeIntervalSince1970: sqlite3_column_double(statement, 3))
+                
+                schedules.append(Schedule(
+                    id: id, title: title,
+                    startDateTime: startDateTime,
+                    endDateTime: endDateTime,
+                    note: note, type: ScheduleType(rawValue: typeRaw) ?? .task,
+                    source: ScheduleSource(rawValue: sourceRaw) ?? .manual,
+                    workspaceID: sqlite3_column_text(statement, 7).map { String(cString: $0) },
+                    channelID: sqlite3_column_text(statement, 8).map { String(cString: $0) },
+                    channelName: sqlite3_column_text(statement, 9).map { String(cString: $0) },
+                    slackTimestamp: sqlite3_column_text(statement, 10).map { String(cString: $0) },
+                    slackLink: sqlite3_column_text(statement, 11).map { String(cString: $0) },
+                    slackMessageText: sqlite3_column_text(statement, 12).map { String(cString: $0) },
+                    workspaceColor: sqlite3_column_text(statement, 13).map { String(cString: $0) },
+                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 14)),
+                    notificationSent: sqlite3_column_int(statement, 15) == 1,
+                    location: sqlite3_column_text(statement, 16).map { String(cString: $0) },
+                    links: (sqlite3_column_text(statement, 17).map { String(cString: $0) })
+                        .flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode([String].self, from: $0) },
+                    tagID: sqlite3_column_text(statement, 18).map { String(cString: $0) }, // tagID retrieval
+                    isDone: sqlite3_column_int(statement, 19) == 1 // Index adjusted
+                ))
+            }
+            return schedules
+        }
+    }
+    
+    func updateSchedule(_ schedule: Schedule) throws { try insertSchedule(schedule) }
+    
+    func deleteSchedule(id: String) throws {
+        try dbQueue.sync {
+            let query = "DELETE FROM schedules WHERE id = ?;"
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK { throw DatabaseError.prepareFailed(String(cString: sqlite3_errmsg(db))) }
+            sqlite3_bind_text(statement, 1, (id as NSString).utf8String, -1, nil)
+            if sqlite3_step(statement) != SQLITE_DONE { throw DatabaseError.stepFailed(String(cString: sqlite3_errmsg(db))) }
+        }
+    }
+    
+    func scheduleExists(id: String) throws -> Bool {
+        try dbQueue.sync {
+            let query = "SELECT 1 FROM schedules WHERE id = ?;"
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK { throw DatabaseError.prepareFailed(String(cString: sqlite3_errmsg(db))) }
+            sqlite3_bind_text(statement, 1, (id as NSString).utf8String, -1, nil)
+            return sqlite3_step(statement) == SQLITE_ROW
+        }
+    }
+    
+    // MARK: - Configuration CRUD
+    
+    func insertConfiguration(_ config: SlackConfiguration) throws {
+        try dbQueue.sync {
+            let query = "INSERT OR REPLACE INTO slack_configurations (id, name, channelName, token, channelID, keywords, isEnabled, createdAt, color, userID, teamID) VALUES (?,?,?,?,?,?,?,?,?,?,?);"
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK { throw DatabaseError.prepareFailed(String(cString: sqlite3_errmsg(db))) }
+            
+            let keywordsData = try JSONEncoder().encode(config.keywords)
+            let keywordsString = String(data: keywordsData, encoding: .utf8) ?? "[]"
+            let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+            
+            sqlite3_bind_text(statement, 1, (config.id as NSString).utf8String, -1, transient)
+            sqlite3_bind_text(statement, 2, (config.name as NSString).utf8String, -1, transient)
+            sqlite3_bind_text(statement, 3, (config.channelName as NSString).utf8String, -1, transient)
+            sqlite3_bind_text(statement, 4, (config.token as NSString).utf8String, -1, transient)
+            sqlite3_bind_text(statement, 5, (config.channelID as NSString).utf8String, -1, transient)
+            sqlite3_bind_text(statement, 6, (keywordsString as NSString).utf8String, -1, transient)
+            sqlite3_bind_int(statement, 7, config.isEnabled ? 1 : 0)
+            sqlite3_bind_double(statement, 8, config.createdAt.timeIntervalSince1970)
+            sqlite3_bind_text(statement, 9, (config.color as NSString).utf8String, -1, transient)
+            
+            if let userID = config.userID { sqlite3_bind_text(statement, 10, (userID as NSString).utf8String, -1, transient) }
+            else { sqlite3_bind_null(statement, 10) }
 
-    // 삭제된 Slack 메시지인지 확인
+            if let teamID = config.teamID { sqlite3_bind_text(statement, 11, (teamID as NSString).utf8String, -1, transient) }
+            else { sqlite3_bind_null(statement, 11) }
+            
+            if sqlite3_step(statement) != SQLITE_DONE { throw DatabaseError.stepFailed(String(cString: sqlite3_errmsg(db))) }
+        } // This closes dbQueue.sync for insertConfiguration
+        
+    } // This closes the insertConfiguration function
+    
+    func fetchAllConfigurations() throws -> [SlackConfiguration] {
+        try dbQueue.sync {
+            let query = "SELECT * FROM slack_configurations ORDER BY createdAt DESC;"
+            var statement:OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK { throw DatabaseError.prepareFailed(String(cString: sqlite3_errmsg(db))) }
+            
+            var configs: [SlackConfiguration] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let id = sqlite3_column_text(statement, 0).map({String(cString:$0)}),
+                      let name = sqlite3_column_text(statement, 1).map({String(cString:$0)}),
+                      let token = sqlite3_column_text(statement, 3).map({String(cString:$0)}),
+                      let channelID = sqlite3_column_text(statement, 4).map({String(cString:$0)})
+                else { continue }
+                
+                let channelName = sqlite3_column_text(statement, 2).map{String(cString:$0)} ?? ""
+                let keywordsString = sqlite3_column_text(statement, 5).map{String(cString:$0)} ?? "[]"
+                let keywords = (try? JSONDecoder().decode([String].self, from: keywordsString.data(using: .utf8) ?? Data())) ?? []
+                let color = sqlite3_column_text(statement, 8).map{String(cString:$0)} ?? "#808080"
+                let userID = sqlite3_column_text(statement, 9).map{String(cString:$0)}
+                let teamID = sqlite3_column_text(statement, 10).map{String(cString:$0)}
+                
+                configs.append(SlackConfiguration(id: id, name: name, channelName: channelName, token: token, channelID: channelID, keywords: keywords, isEnabled: sqlite3_column_int(statement, 6) == 1, createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 7)), color: color, userID: userID, teamID: teamID))
+            }
+            return configs
+        }
+    }    
+    func fetchEnabledConfigurations() throws -> [SlackConfiguration] { try fetchAllConfigurations().filter{$0.isEnabled} }
+    func fetchConfiguration(id:String) throws -> SlackConfiguration? { try fetchAllConfigurations().first{$0.id==id} }
+    func updateConfiguration(_ config: SlackConfiguration) throws { try insertConfiguration(config) }
+    func deleteConfiguration(id:String) throws { try dbQueue.sync{let q="DELETE FROM slack_configurations WHERE id=?;";var s:OpaquePointer?;defer{sqlite3_finalize(s)};if sqlite3_prepare_v2(db,q,-1,&s,nil) != SQLITE_OK{throw DatabaseError.prepareFailed(String(cString:sqlite3_errmsg(db)))};sqlite3_bind_text(s,1,(id as NSString).utf8String,-1,nil);if sqlite3_step(s) != SQLITE_DONE{throw DatabaseError.stepFailed(String(cString:sqlite3_errmsg(db)))}}}
+    func hasAnyConfiguration() throws -> Bool { return !(try fetchAllConfigurations().isEmpty) }
+    
+    func cleanupCorruptedConfigurations() throws {
+        try dbQueue.sync {
+            _ = try executeSQL("DELETE FROM slack_configurations WHERE name = '' OR token = '' OR channelID = '';")
+        }
+    }
+    
+    // MARK: - Deleted Message Tracking
+    func recordDeletedSlackMessage(_ slackTimestamp: String) throws {
+        try dbQueue.sync {
+            let query = "INSERT OR IGNORE INTO deleted_slack_messages (slackTimestamp, deletedAt) VALUES (?, ?);"
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK { throw DatabaseError.prepareFailed(String(cString: sqlite3_errmsg(db))) }
+            sqlite3_bind_text(statement, 1, (slackTimestamp as NSString).utf8String, -1, nil)
+            sqlite3_bind_double(statement, 2, Date().timeIntervalSince1970)
+            if sqlite3_step(statement) != SQLITE_DONE { throw DatabaseError.stepFailed(String(cString: sqlite3_errmsg(db))) }
+        }
+    }
+    
     func isDeletedSlackMessage(_ slackTimestamp: String) throws -> Bool {
         try dbQueue.sync {
-            let query = "SELECT COUNT(*) FROM deleted_slack_messages WHERE slackTimestamp = ?;"
+            let query = "SELECT 1 FROM deleted_slack_messages WHERE slackTimestamp = ?;"
             var statement: OpaquePointer?
-
-            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK {
-                let error = String(cString: sqlite3_errmsg(db))
-                throw DatabaseError.prepareFailed(error)
-            }
-
-            defer {
-                sqlite3_finalize(statement)
-            }
-
-            let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-            sqlite3_bind_text(statement, 1, (slackTimestamp as NSString).utf8String, -1, SQLITE_TRANSIENT)
-
-            if sqlite3_step(statement) == SQLITE_ROW {
-                let count = sqlite3_column_int(statement, 0)
-                return count > 0
-            }
-
-            return false
+            defer { sqlite3_finalize(statement) }
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK { throw DatabaseError.prepareFailed(String(cString: sqlite3_errmsg(db))) }
+            sqlite3_bind_text(statement, 1, (slackTimestamp as NSString).utf8String, -1, nil)
+            return sqlite3_step(statement) == SQLITE_ROW
         }
     }
-
-    func meetingExists(id: String) throws -> Bool {
+    
+    func fetchUpcomingSchedules(within minutes: Int = 5) throws -> [Schedule] {
         try dbQueue.sync {
-            let query = "SELECT COUNT(*) FROM meetings WHERE id = ?;"
-
+            let now = Date().timeIntervalSince1970
+            let fiveMinutesLater = Date().addingTimeInterval(TimeInterval(minutes * 60)).timeIntervalSince1970
+            
+            let query = """
+            SELECT id, title, startDateTime, endDateTime, note, type, source, workspaceID, channelID, channelName, slackTimestamp, slackLink, slackMessageText, workspaceColor, createdAt, notificationSent, location, links, tagID, isDone
+            FROM schedules
+            WHERE (notificationSent = 0)
+            AND startDateTime > ?
+            AND startDateTime <= ?
+            AND (isDone = 0)
+            ORDER BY startDateTime DESC;
+            """
             var statement: OpaquePointer?
-
-            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK {
-                let error = String(cString: sqlite3_errmsg(db))
-                throw DatabaseError.prepareFailed(error)
+            defer { sqlite3_finalize(statement) }
+            
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK { throw DatabaseError.prepareFailed(String(cString: sqlite3_errmsg(db))) }
+            
+            sqlite3_bind_double(statement, 1, now)
+            sqlite3_bind_double(statement, 2, fiveMinutesLater)
+            
+            var schedules: [Schedule] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let id = sqlite3_column_text(statement, 0).map({ String(cString: $0) }),
+                      let title = sqlite3_column_text(statement, 1).map({ String(cString: $0) }),
+                      let note = sqlite3_column_text(statement, 4).map({ String(cString: $0) }),
+                      let typeRaw = sqlite3_column_text(statement, 5).map({ String(cString: $0) }),
+                      let sourceRaw = sqlite3_column_text(statement, 6).map({ String(cString: $0) })
+                else { continue }
+                
+                let startDateTime = Date(timeIntervalSince1970: sqlite3_column_double(statement, 2))
+                let endDateTime: Date? = sqlite3_column_type(statement, 3) == SQLITE_NULL ? nil : Date(timeIntervalSince1970: sqlite3_column_double(statement, 3))
+                
+                schedules.append(Schedule(
+                    id: id, title: title,
+                    startDateTime: startDateTime,
+                    endDateTime: endDateTime,
+                    note: note, type: ScheduleType(rawValue: typeRaw) ?? .task,
+                    source: ScheduleSource(rawValue: sourceRaw) ?? .manual,
+                    workspaceID: sqlite3_column_text(statement, 7).map { String(cString: $0) },
+                    channelID: sqlite3_column_text(statement, 8).map { String(cString: $0) },
+                    channelName: sqlite3_column_text(statement, 9).map { String(cString: $0) },
+                    slackTimestamp: sqlite3_column_text(statement, 10).map { String(cString: $0) },
+                    slackLink: sqlite3_column_text(statement, 11).map { String(cString: $0) },
+                    slackMessageText: sqlite3_column_text(statement, 12).map { String(cString: $0) },
+                    workspaceColor: sqlite3_column_text(statement, 13).map { String(cString: $0) },
+                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 14)),
+                    notificationSent: sqlite3_column_int(statement, 15) == 1,
+                    location: sqlite3_column_text(statement, 16).map { String(cString: $0) },
+                    links: (sqlite3_column_text(statement, 17).map { String(cString: $0) })
+                        .flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode([String].self, from: $0) },
+                    tagID: sqlite3_column_text(statement, 18).map { String(cString: $0) }, // tagID retrieval (index 18)
+                    isDone: sqlite3_column_int(statement, 19) == 1 // Index adjusted to 19
+                ))
             }
-
-            defer {
-                sqlite3_finalize(statement)
-            }
-
-            sqlite3_bind_text(statement, 1, (id as NSString).utf8String, -1, nil)
-
-            if sqlite3_step(statement) == SQLITE_ROW {
-                let count = sqlite3_column_int(statement, 0)
-                return count > 0
-            }
-
-            return false
+            return schedules
         }
     }
-
-    // 회의 업데이트 (전체 객체)
-    func updateMeeting(_ meeting: Meeting) throws {
-        try insertMeeting(meeting) // INSERT OR REPLACE
-    }
-
-    // 알림 전송 플래그 업데이트
-    func markNotificationSent(id: String) throws {
+    
+    func markScheduleNotificationSent(id: String) throws {
         try dbQueue.sync {
-            let updateQuery = "UPDATE meetings SET notificationSent = 1 WHERE id = ?;"
-
+            let query = "UPDATE schedules SET notificationSent = 1 WHERE id = ?;"
             var statement: OpaquePointer?
-
-            if sqlite3_prepare_v2(db, updateQuery, -1, &statement, nil) != SQLITE_OK {
-                let error = String(cString: sqlite3_errmsg(db))
-                throw DatabaseError.prepareFailed(error)
-            }
-
-            defer {
-                sqlite3_finalize(statement)
-            }
-
+            defer { sqlite3_finalize(statement) }
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK { throw DatabaseError.prepareFailed(String(cString: sqlite3_errmsg(db))) }
             sqlite3_bind_text(statement, 1, (id as NSString).utf8String, -1, nil)
-
-            if sqlite3_step(statement) != SQLITE_DONE {
-                let error = String(cString: sqlite3_errmsg(db))
-                throw DatabaseError.stepFailed(error)
-            }
+            if sqlite3_step(statement) != SQLITE_DONE { throw DatabaseError.stepFailed(String(cString: sqlite3_errmsg(db))) }
         }
     }
-
-    // 예정된 회의 가져오기 (알림 미전송 + 시간 임박)
-    func fetchUpcomingMeetings(within minutes: Int = 5) throws -> [Meeting] {
-        let now = Date()
-        let futureTime = now.addingTimeInterval(TimeInterval(minutes * 60))
-
-        return try fetchAllMeetings().filter { meeting in
-            !meeting.notificationSent &&
-            meeting.scheduledTime > now &&
-            meeting.scheduledTime <= futureTime
+    
+    func toggleScheduleDone(id: String) throws {
+        try dbQueue.sync {
+            let query = "UPDATE schedules SET isDone = NOT isDone WHERE id = ?;"
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) != SQLITE_OK { throw DatabaseError.prepareFailed(String(cString: sqlite3_errmsg(db))) }
+            sqlite3_bind_text(statement, 1, (id as NSString).utf8String, -1, nil)
+            if sqlite3_step(statement) != SQLITE_DONE { throw DatabaseError.stepFailed(String(cString: sqlite3_errmsg(db))) }
         }
     }
 }

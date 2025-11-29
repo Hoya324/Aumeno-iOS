@@ -6,14 +6,85 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		76DC8BE62EDA91300058CDB0 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76DC8BE52EDA91300058CDB0 /* WidgetKit.framework */; };
+		76DC8BE82EDA91300058CDB0 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76DC8BE72EDA91300058CDB0 /* SwiftUI.framework */; };
+		76DC8BF72EDA91310058CDB0 /* Aumeno-widgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 76DC8BE32EDA91300058CDB0 /* Aumeno-widgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		76DC8BF52EDA91310058CDB0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 766C5CC12ED8B96C00547709 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 76DC8BE22EDA91300058CDB0;
+			remoteInfo = "Aumeno-widgetExtension";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		76DC8BFC2EDA91310058CDB0 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				76DC8BF72EDA91310058CDB0 /* Aumeno-widgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		766C5CC92ED8B96C00547709 /* Aumeno.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Aumeno.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		76DC8BE32EDA91300058CDB0 /* Aumeno-widgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Aumeno-widgetExtension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		76DC8BE52EDA91300058CDB0 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		76DC8BE72EDA91300058CDB0 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		76DC8C5F2EDAA9B30058CDB0 /* Aumeno-widgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Aumeno-widgetExtension.entitlements"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		76DC8BFE2EDA934D0058CDB0 /* Exceptions for "Aumeno" folder in "Aumeno-widgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Models/Meeting.swift,
+				Models/Schedule.swift,
+				Models/SlackConfiguration.swift,
+				Models/Tag.swift,
+				Services/DatabaseManager.swift,
+				Services/MeetingScheduler.swift,
+				Services/SlackService.swift,
+				Utils/ButtonStyles.swift,
+				Utils/CalendarHelper.swift,
+				Utils/ColorExtensions.swift,
+				ViewModels/MeetingViewModel.swift,
+				Views/TimelineView.swift,
+			);
+			target = 76DC8BE22EDA91300058CDB0 /* Aumeno-widgetExtension */;
+		};
+		76F96E022EDD21F90010DEF1 /* Exceptions for "Aumeno" folder in "Aumeno" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 766C5CC82ED8B96C00547709 /* Aumeno */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		766C5CCB2ED8B96C00547709 /* Aumeno */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				76F96E022EDD21F90010DEF1 /* Exceptions for "Aumeno" folder in "Aumeno" target */,
+				76DC8BFE2EDA934D0058CDB0 /* Exceptions for "Aumeno" folder in "Aumeno-widgetExtension" target */,
+			);
 			path = Aumeno;
+			sourceTree = "<group>";
+		};
+		76DC8BE92EDA91300058CDB0 /* Aumeno-widget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Aumeno-widget";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -26,13 +97,25 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		76DC8BE02EDA91300058CDB0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				76DC8BE82EDA91300058CDB0 /* SwiftUI.framework in Frameworks */,
+				76DC8BE62EDA91300058CDB0 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		766C5CC02ED8B96C00547709 = {
 			isa = PBXGroup;
 			children = (
+				76DC8C5F2EDAA9B30058CDB0 /* Aumeno-widgetExtension.entitlements */,
 				766C5CCB2ED8B96C00547709 /* Aumeno */,
+				76DC8BE92EDA91300058CDB0 /* Aumeno-widget */,
+				76DC8BE42EDA91300058CDB0 /* Frameworks */,
 				766C5CCA2ED8B96C00547709 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,8 +124,18 @@
 			isa = PBXGroup;
 			children = (
 				766C5CC92ED8B96C00547709 /* Aumeno.app */,
+				76DC8BE32EDA91300058CDB0 /* Aumeno-widgetExtension.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		76DC8BE42EDA91300058CDB0 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				76DC8BE52EDA91300058CDB0 /* WidgetKit.framework */,
+				76DC8BE72EDA91300058CDB0 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -55,10 +148,12 @@
 				766C5CC52ED8B96C00547709 /* Sources */,
 				766C5CC62ED8B96C00547709 /* Frameworks */,
 				766C5CC72ED8B96C00547709 /* Resources */,
+				76DC8BFC2EDA91310058CDB0 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				76DC8BF62EDA91310058CDB0 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				766C5CCB2ED8B96C00547709 /* Aumeno */,
@@ -69,6 +164,28 @@
 			productName = Aumeno;
 			productReference = 766C5CC92ED8B96C00547709 /* Aumeno.app */;
 			productType = "com.apple.product-type.application";
+		};
+		76DC8BE22EDA91300058CDB0 /* Aumeno-widgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 76DC8BF92EDA91310058CDB0 /* Build configuration list for PBXNativeTarget "Aumeno-widgetExtension" */;
+			buildPhases = (
+				76DC8BDF2EDA91300058CDB0 /* Sources */,
+				76DC8BE02EDA91300058CDB0 /* Frameworks */,
+				76DC8BE12EDA91300058CDB0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				76DC8BE92EDA91300058CDB0 /* Aumeno-widget */,
+			);
+			name = "Aumeno-widgetExtension";
+			packageProductDependencies = (
+			);
+			productName = "Aumeno-widgetExtension";
+			productReference = 76DC8BE32EDA91300058CDB0 /* Aumeno-widgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -83,6 +200,9 @@
 					766C5CC82ED8B96C00547709 = {
 						CreatedOnToolsVersion = 26.1.1;
 					};
+					76DC8BE22EDA91300058CDB0 = {
+						CreatedOnToolsVersion = 26.1.1;
+					};
 				};
 			};
 			buildConfigurationList = 766C5CC42ED8B96C00547709 /* Build configuration list for PBXProject "Aumeno" */;
@@ -94,18 +214,28 @@
 			);
 			mainGroup = 766C5CC02ED8B96C00547709;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 766C5CCA2ED8B96C00547709 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				766C5CC82ED8B96C00547709 /* Aumeno */,
+				76DC8BE22EDA91300058CDB0 /* Aumeno-widgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		766C5CC72ED8B96C00547709 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		76DC8BE12EDA91300058CDB0 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +252,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		76DC8BDF2EDA91300058CDB0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		76DC8BF62EDA91310058CDB0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 76DC8BE22EDA91300058CDB0 /* Aumeno-widgetExtension */;
+			targetProxy = 76DC8BF52EDA91310058CDB0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		766C5CD22ED8B96D00547709 /* Debug */ = {
@@ -250,6 +395,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Aumeno/Aumeno.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -285,6 +431,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Aumeno/Aumeno.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -315,6 +462,76 @@
 			};
 			name = Release;
 		};
+		76DC8BFA2EDA91310058CDB0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = "Aumeno-widgetExtension.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = H7825NYH4G;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Aumeno-widget/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Aumeno-widget";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.sandbox.Aumeno.Aumeno-widget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		76DC8BFB2EDA91310058CDB0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = "Aumeno-widgetExtension.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = H7825NYH4G;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Aumeno-widget/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Aumeno-widget";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.sandbox.Aumeno.Aumeno-widget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -332,6 +549,15 @@
 			buildConfigurations = (
 				766C5CD52ED8B96D00547709 /* Debug */,
 				766C5CD62ED8B96D00547709 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		76DC8BF92EDA91310058CDB0 /* Build configuration list for PBXNativeTarget "Aumeno-widgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				76DC8BFA2EDA91310058CDB0 /* Debug */,
+				76DC8BFB2EDA91310058CDB0 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

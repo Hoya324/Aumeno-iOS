@@ -2,7 +2,7 @@
 //  OnboardingView.swift
 //  Aumeno
 //
-//  Created by Claude Code
+//  Created by Hoya324
 //
 
 import SwiftUI
@@ -435,7 +435,7 @@ struct OnboardingView: View {
         )
 
         do {
-            try ConfigurationManager.shared.insertConfiguration(config)
+            try DatabaseManager.shared.insertConfiguration(config)
             print("✅ Configuration saved: \(config.name) / \(config.channelName)")
 
             // Complete onboarding

@@ -1,24 +1,31 @@
 #!/bin/bash
 
-# Clear all Aumeno data
 echo "🗑️ Clearing all Aumeno data..."
+echo "---"
+echo "This script will force-delete the database and its related files."
+echo "Please ensure the Aumeno application is completely quit."
+echo "---"
 
-# Remove database
-DB_PATH="$HOME/Library/Application Support/Aumeno/aumeno.sqlite"
-if [ -f "$DB_PATH" ]; then
-    rm "$DB_PATH"
-    echo "✅ Database deleted: $DB_PATH"
-else
-    echo "⚠️ Database not found: $DB_PATH"
+# Correct path for the shared App Group container
+CONTAINER_PATH="$HOME/Library/Group Containers/group.com.sandbox.Aumeno"
+DB_FILE_BASE="$CONTAINER_PATH/aumeno.sqlite"
+
+# Check if the container directory exists
+if [ ! -d "$CONTAINER_PATH" ]; then
+    echo "❌ Error: App Group container not found at $CONTAINER_PATH"
+    echo "Please run the app at least once to create it."
+    exit 1
 fi
 
-# Remove the entire Aumeno directory
-AUMENO_DIR="$HOME/Library/Application Support/Aumeno"
-if [ -d "$AUMENO_DIR" ]; then
-    rm -rf "$AUMENO_DIR"
-    echo "✅ Aumeno directory deleted: $AUMENO_DIR"
-else
-    echo "⚠️ Aumeno directory not found: $AUMENO_DIR"
-fi
+echo "Searching for and deleting database files in: $CONTAINER_PATH"
 
-echo "✨ All data cleared! The database will be recreated on next app launch."
+# Force-remove the database and any associated journal/WAL files
+# Use `find` to locate and show what's being deleted.
+find "$CONTAINER_PATH" -name 'aumeno.sqlite*' -print -exec rm -f {} \;
+
+echo ""
+echo "✨ Verification:"
+echo "Listing contents of the container to confirm deletion:"
+ls -l "$CONTAINER_PATH"
+echo ""
+echo "✅ Cleanup attempt finished."

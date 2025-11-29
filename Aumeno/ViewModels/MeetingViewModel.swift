@@ -1,8 +1,8 @@
 //
-//  MeetingViewModel.swift
+//  ScheduleViewModel.swift
 //  Aumeno
 //
-//  Created by Claude Code
+//  Created by Hoya324
 //
 
 import Foundation
@@ -11,20 +11,22 @@ import Combine
 
 @MainActor
 final class MeetingViewModel: ObservableObject {
-    @Published var meetings: [Meeting] = []
+    @Published var schedules: [Schedule] = []
     @Published var isSyncing: Bool = false
     @Published var errorMessage: String?
+    @Published var tags: [Tag] = [] // New property
 
     private var pollingTimer: Timer?
     private let pollingInterval: TimeInterval = 10.0
     private var lastFetchedTimestamp: String?
 
     init() {
-        loadMeetingsFromDatabase()
+        loadSchedulesFromDatabase()
+        fetchTags() // Call fetchTags on initialization
         startPolling()
         requestNotificationPermission()
 
-        // MeetingScheduler 시작 (회의 시간 자동 알림)
+        // MeetingScheduler를 새로운 Schedule 모델로 시작
         Task { @MainActor in
             MeetingScheduler.shared.startScheduler()
         }
@@ -55,85 +57,130 @@ final class MeetingViewModel: ObservableObject {
     // MARK: - Sync Logic
 
     func syncWithSlack() async {
-        guard !isSyncing else { return }
-
-        isSyncing = true
-        errorMessage = nil
-
-        do {
-            // 모든 활성화된 Slack 설정에서 메시지 가져오기
-            let fetchedMeetings = try await SlackService.shared.fetchMessagesFromAllConfigurations()
-
-            // Filter new meetings only (중복 방지 + 삭제된 메시지 제외)
-            let newMeetings = fetchedMeetings.filter { meeting in
-                // 이미 존재하는 회의는 제외
-                if (try? DatabaseManager.shared.meetingExists(id: meeting.id)) ?? false {
-                    return false
-                }
-
-                // 삭제된 Slack 메시지는 제외
-                if let slackTimestamp = meeting.slackTimestamp,
-                   (try? DatabaseManager.shared.isDeletedSlackMessage(slackTimestamp)) ?? false {
-                    print("   ⏭️ Skipping deleted message: \(meeting.title)")
-                    return false
-                }
-
-                return true
-            }
-
-            print("📊 Sync stats: \(fetchedMeetings.count) fetched, \(newMeetings.count) new")
-
-            // Save new meetings to database
-            for meeting in newMeetings {
-                try DatabaseManager.shared.insertMeeting(meeting)
-            }
-
-            // Reload from database
-            loadMeetingsFromDatabase()
-
-            // Slack 메시지는 MeetingScheduler가 자동으로 처리
-            // (즉시 알림 대신 예정 시간에 알림)
-
-            print("✅ Synced: \(newMeetings.count) new meeting(s)")
-
-        } catch {
-            errorMessage = "Sync failed: \(error.localizedDescription)"
-            print("❌ Sync error: \(error)")
+        guard !isSyncing else {
+            print("[ViewModel] ⚠️ Sync already in progress. Skipping.")
+            return
         }
 
-        isSyncing = false
+        print("▶️ [ViewModel] Starting Slack sync...")
+        isSyncing = true
+        errorMessage = nil
+        
+        defer {
+            Task { @MainActor in
+                isSyncing = false
+                print("⏹️ [ViewModel] Sync finished.")
+            }
+        }
+
+        do {
+            let fetchedSchedules = try await SlackService.shared.fetchSchedulesFromAllConfigurations()
+            print("   [ViewModel] Fetched \(fetchedSchedules.count) total schedules from SlackService.")
+
+            let newSchedules = fetchedSchedules.filter { schedule in
+                if (try? DatabaseManager.shared.scheduleExists(id: schedule.id)) ?? false {
+                    return false
+                }
+                if let slackTimestamp = schedule.slackTimestamp,
+                   (try? DatabaseManager.shared.isDeletedSlackMessage(slackTimestamp)) ?? false {
+                    return false
+                }
+                return true
+            }
+            
+            print("   [ViewModel] Found \(newSchedules.count) new schedules to be saved.")
+
+            if !newSchedules.isEmpty {
+                for schedule in newSchedules {
+                    print("      [ViewModel] 💾 Saving schedule: '\(schedule.title)' for \(schedule.formattedStartDateTime)")
+                    try DatabaseManager.shared.insertSchedule(schedule)
+                }
+                // Reload from database only if new items were added
+                loadSchedulesFromDatabase()
+            }
+
+        } catch {
+            let errorMsg = "Sync failed: \(error.localizedDescription)"
+            errorMessage = errorMsg
+            print("❌ [ViewModel] \(errorMsg)")
+        }
     }
 
     // MARK: - Database Operations
 
-    private func loadMeetingsFromDatabase() {
+    private func loadSchedulesFromDatabase() {
+        print("🔄 [ViewModel] Loading schedules from database...")
         do {
-            meetings = try DatabaseManager.shared.fetchAllMeetings()
+            let oldSchedules = schedules
+            schedules = try DatabaseManager.shared.fetchAllSchedules()
+            print("   [ViewModel] ✅ Loaded \(schedules.count) schedules.")
+            if oldSchedules != schedules {
+                print("   [ViewModel] ⚠️ Schedule data has changed.")
+            } else {
+                print("   [ViewModel] No changes in schedule data.")
+            }
         } catch {
-            errorMessage = "Failed to load meetings: \(error.localizedDescription)"
-            print("❌ Load error: \(error)")
+            let errorMsg = "Failed to load schedules: \(error.localizedDescription)"
+            errorMessage = errorMsg
+            print("❌ [ViewModel] \(errorMsg)")
         }
     }
 
-    func updateNote(for meetingID: String, note: String) {
+    func fetchTags() {
+        print("🔄 [ViewModel] Loading tags from database...")
         do {
-            try DatabaseManager.shared.updateMeetingNote(id: meetingID, note: note)
-            loadMeetingsFromDatabase()
-            print("✅ Note updated for meeting: \(meetingID)")
+            tags = try DatabaseManager.shared.fetchAllTags()
+            print("   [ViewModel] ✅ Loaded \(tags.count) tags.")
         } catch {
-            errorMessage = "Failed to update note: \(error.localizedDescription)"
-            print("❌ Update error: \(error)")
+            let errorMsg = "Failed to load tags: \(error.localizedDescription)"
+            errorMessage = errorMsg
+            print("❌ [ViewModel] \(errorMsg)")
         }
     }
 
-    func deleteMeeting(_ meeting: Meeting) {
+    func updateNote(for scheduleID: String, note: String) {
+        guard let index = schedules.firstIndex(where: { $0.id == scheduleID }) else {
+            print("❌ [ViewModel] Could not find schedule with ID \(scheduleID) to update note.")
+            return
+        }
+        
+        var scheduleToUpdate = schedules[index]
+        scheduleToUpdate.note = note
+        
+        // Call the generic update function
+        updateSchedule(schedule: scheduleToUpdate)
+    }
+    
+    func updateSchedule(schedule: Schedule) {
+        print("▶️ [ViewModel] Updating schedule: '\(schedule.title)'")
+        print("  DEBUG: Schedule to update:")
+        print("    ID: \(schedule.id)")
+        print("    Title: \(schedule.title)")
+        print("    Start Date: \(schedule.startDateTime)")
+        print("    End Date: \(schedule.endDateTime ?? Date(timeIntervalSinceReferenceDate: 0))")
+        print("    Tag ID: \(schedule.tagID ?? "nil")")
+
         do {
-            try DatabaseManager.shared.deleteMeeting(id: meeting.id)
-            loadMeetingsFromDatabase()
-            print("✅ Meeting deleted: \(meeting.id)")
+            try DatabaseManager.shared.updateSchedule(schedule)
+            loadSchedulesFromDatabase()
+            print("   [ViewModel] ✅ Successfully updated schedule.")
         } catch {
-            errorMessage = "Failed to delete meeting: \(error.localizedDescription)"
-            print("❌ Delete error: \(error)")
+            let errorMsg = "Failed to update schedule: \(error.localizedDescription). Full error: \(error)"
+            errorMessage = errorMsg
+            print("   [ViewModel] ❌ \(errorMsg)")
+        }
+    }
+
+    func deleteSchedule(_ schedule: Schedule) {
+        print("▶️ [ViewModel] Deleting schedule: '\(schedule.title)'")
+        do {
+            try DatabaseManager.shared.deleteSchedule(id: schedule.id)
+            schedules.removeAll { $0.id == schedule.id }
+            print("   [ViewModel] ✅ Successfully deleted schedule.")
+        } catch {
+            let errorMsg = "Failed to delete schedule: \(error.localizedDescription)"
+            errorMessage = errorMsg
+            print("   [ViewModel] ❌ \(errorMsg)")
         }
     }
 
@@ -157,24 +204,33 @@ final class MeetingViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Meeting Management
+    // MARK: - Schedule Management
 
-    /// 회의 저장 (수동 생성 또는 수정)
-    func saveMeeting(_ meeting: Meeting) {
+    /// 스케줄 저장 (수동 생성 또는 수정)
+    func saveSchedule(_ schedule: Schedule) {
+        print("▶️ [ViewModel] Saving schedule: '\(schedule.title)'")
+        print("  DEBUG: Schedule to save:")
+        print("    ID: \(schedule.id)")
+        print("    Title: \(schedule.title)")
+        print("    Start Date: \(schedule.startDateTime)")
+        print("    End Date: \(schedule.endDateTime ?? Date(timeIntervalSinceReferenceDate: 0))")
+        print("    Tag ID: \(schedule.tagID ?? "nil")")
+
         do {
-            try DatabaseManager.shared.insertMeeting(meeting)
-            loadMeetingsFromDatabase()
-            print("✅ Meeting saved: \(meeting.title)")
+            try DatabaseManager.shared.insertSchedule(schedule)
+            loadSchedulesFromDatabase()
+            fetchTags()
+            print("   [ViewModel] ✅ Successfully saved schedule.")
 
-            // 새 회의라면 스케줄러에 등록
-            if !meeting.notificationSent && meeting.scheduledTime > Date() {
+            if !schedule.notificationSent && schedule.startDateTime > Date() {
                 Task {
-                    await MeetingScheduler.shared.scheduleMeetingNotification(meeting)
+                    await MeetingScheduler.shared.scheduleNotification(schedule)
                 }
             }
         } catch {
-            errorMessage = "Failed to save meeting: \(error.localizedDescription)"
-            print("❌ Save error: \(error)")
+            let errorMsg = "Failed to save schedule: \(error.localizedDescription). Full error: \(error)"
+            errorMessage = errorMsg
+            print("   [ViewModel] ❌ Error saving schedule: \(errorMsg)")
         }
     }
 
@@ -183,11 +239,19 @@ final class MeetingViewModel: ObservableObject {
     /// 첫 실행 체크 (Slack 설정이 없으면 온보딩 필요)
     func checkFirstLaunch(completion: @escaping (Bool) -> Void) {
         do {
-            let hasConfigs = try ConfigurationManager.shared.hasAnyConfiguration()
+            let hasConfigs = try DatabaseManager.shared.hasAnyConfiguration()
             completion(!hasConfigs)
         } catch {
             print("❌ Failed to check configurations: \(error)")
             completion(false)
         }
+    }
+
+    // MARK: - Tag Helpers
+    
+    /// 지정된 tagID에 해당하는 Tag 객체를 반환합니다.
+    func tag(for id: String?) -> Tag? {
+        guard let id = id else { return nil }
+        return tags.first(where: { $0.id == id })
     }
 }

@@ -2,7 +2,7 @@
 //  FloatingWindowController.swift
 //  Aumeno
 //
-//  Created by Claude Code
+//  Created by Hoya324
 //
 
 import Cocoa
