@@ -1,10 +1,3 @@
-//
-//  Meeting.swift
-//  Aumeno
-//
-//  Created by Claude Code
-//
-
 import Foundation
 
 enum MeetingSource: String, Codable {
@@ -15,7 +8,7 @@ enum MeetingSource: String, Codable {
 struct Meeting: Identifiable, Codable, Equatable {
     let id: String
     var title: String
-    var scheduledTime: Date      // 실제 회의 예정 시간
+    var startDateTime: Date      // 실제 회의 예정 시간
     var note: String
     var source: MeetingSource    // 생성 출처
     var slackConfigID: String?   // Slack 설정 ID (Slack 출처인 경우)
@@ -23,13 +16,13 @@ struct Meeting: Identifiable, Codable, Equatable {
     var createdAt: Date          // 생성 시간
     var notificationSent: Bool   // 알림 전송 여부
     var location: String?        // 회의 장소
-    var notionLink: String?      // Notion 링크
+    var links: [String]?         // 관련된 링크 목록
 
     // 수동 생성용 초기화
     init(
         id: String = UUID().uuidString,
         title: String,
-        scheduledTime: Date,
+        startDateTime: Date, // Renamed
         note: String = "",
         source: MeetingSource = .manual,
         slackConfigID: String? = nil,
@@ -37,11 +30,11 @@ struct Meeting: Identifiable, Codable, Equatable {
         createdAt: Date = Date(),
         notificationSent: Bool = false,
         location: String? = nil,
-        notionLink: String? = nil
+        links: [String]? = nil
     ) {
         self.id = id
         self.title = title
-        self.scheduledTime = scheduledTime
+        self.startDateTime = startDateTime // Assigned
         self.note = note
         self.source = source
         self.slackConfigID = slackConfigID
@@ -49,22 +42,22 @@ struct Meeting: Identifiable, Codable, Equatable {
         self.createdAt = createdAt
         self.notificationSent = notificationSent
         self.location = location
-        self.notionLink = notionLink
+        self.links = links
     }
 
     // Slack 메시지에서 생성 (편의 초기화)
     init(
         slackTimestamp: String,
         title: String,
-        scheduledTime: Date,
+        startDateTime: Date, // Renamed
         slackConfigID: String,
         location: String? = nil,
-        notionLink: String? = nil,
+        links: [String]? = nil,
         note: String = ""
     ) {
         self.id = slackTimestamp
         self.title = title
-        self.scheduledTime = scheduledTime
+        self.startDateTime = startDateTime // Assigned
         self.note = note
         self.source = .slack
         self.slackConfigID = slackConfigID
@@ -72,18 +65,18 @@ struct Meeting: Identifiable, Codable, Equatable {
         self.createdAt = Date()
         self.notificationSent = false
         self.location = location
-        self.notionLink = notionLink
+        self.links = links
     }
 }
 
 // Extension for display formatting
 extension Meeting {
-    var formattedScheduledTime: String {
+    var formattedStartDateTime: String { // Renamed
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         formatter.locale = Locale(identifier: "ko_KR")
-        return formatter.string(from: scheduledTime)
+        return formatter.string(from: startDateTime)
     }
 
     var formattedCreatedAt: String {
@@ -116,33 +109,19 @@ extension Meeting {
     // 회의 시간이 임박했는지 확인 (5분 전)
     func isUpcoming(within minutes: Int = 5) -> Bool {
         let now = Date()
-        let timeUntilMeeting = scheduledTime.timeIntervalSince(now)
+        let timeUntilMeeting = startDateTime.timeIntervalSince(now) // Uses startDateTime
         return timeUntilMeeting > 0 && timeUntilMeeting <= Double(minutes * 60)
     }
 
     // 회의 시간이 지났는지 확인
     var isPast: Bool {
-        scheduledTime < Date()
+        startDateTime < Date() // Uses startDateTime
     }
 
     // 회의가 진행 중인지 확인 (시작 후 2시간 이내)
     func isOngoing(duration: TimeInterval = 2 * 60 * 60) -> Bool {
         let now = Date()
-        let endTime = scheduledTime.addingTimeInterval(duration)
-        return scheduledTime <= now && now <= endTime
-    }
-}
-
-// MARK: - Backward Compatibility
-// 기존 코드와의 호환성을 위한 확장
-extension Meeting {
-    // 기존 startTime 속성 호환
-    var startTime: Date {
-        get { scheduledTime }
-        set { scheduledTime = newValue }
-    }
-
-    var formattedStartTime: String {
-        formattedScheduledTime
+        let endTime = startDateTime.addingTimeInterval(duration) // Uses startDateTime
+        return startDateTime <= now && now <= endTime
     }
 }

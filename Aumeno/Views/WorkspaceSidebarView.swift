@@ -2,10 +2,11 @@
 //  WorkspaceSidebarView.swift
 //  Aumeno
 //
-//  Created by Claude Code
+//  Created by Hoya324
 //
 
 import SwiftUI
+import AppKit // For NSColor
 
 struct WorkspaceSidebarView: View {
     let workspaces: [SlackConfiguration]
@@ -37,6 +38,7 @@ struct WorkspaceSidebarView: View {
                             title: workspace.name,
                             channelName: workspace.channelName,
                             icon: nil,
+                            color: workspace.color,
                             isSelected: selectedWorkspace == workspace.id,
                             count: nil // TODO: Add unread count
                         ) {
@@ -74,11 +76,19 @@ struct WorkspaceIconButton: View {
     let title: String
     var channelName: String? = nil
     var icon: String? = nil
+    var color: String? = nil
     let isSelected: Bool
     let count: Int?
     let action: () -> Void
 
     @State private var isHovering = false
+    
+    private var backgroundColor: Color {
+        if let hex = color, let nsColor = NSColor(hex: hex) {
+            return Color(nsColor)
+        }
+        return Color(white: 0.2)
+    }
 
     var body: some View {
         Button(action: action) {
@@ -86,10 +96,10 @@ struct WorkspaceIconButton: View {
                 // Icon
                 ZStack {
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(isSelected ? Color.white.opacity(0.15) : Color(white: 0.2))
+                        .fill(isSelected ? backgroundColor.opacity(0.8) : backgroundColor)
                         .overlay(
                             RoundedRectangle(cornerRadius: 16)
-                                .stroke(isSelected ? Color.white.opacity(0.3) : Color.clear, lineWidth: 2)
+                                .stroke(isSelected ? Color.white : Color.clear, lineWidth: 2)
                         )
 
                     if let iconName = icon {
@@ -135,8 +145,8 @@ struct WorkspaceIconButton: View {
 #Preview {
     WorkspaceSidebarView(
         workspaces: [
-            SlackConfiguration(name: "테스트", channelName: "일반", token: "xoxb-test", channelID: "C123"),
-            SlackConfiguration(name: "회사", channelName: "개발", token: "xoxb-test", channelID: "C456")
+            SlackConfiguration(name: "테스트", channelName: "일반", token: "xoxb-test", channelID: "C123", color: "#4A90E2"),
+            SlackConfiguration(name: "회사", channelName: "개발", token: "xoxb-test", channelID: "C456", color: "#F5A623")
         ],
         selectedWorkspace: nil,
         onSelect: { _ in },
@@ -144,3 +154,4 @@ struct WorkspaceIconButton: View {
     )
     .frame(height: 600)
 }
+

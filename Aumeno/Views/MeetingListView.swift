@@ -2,21 +2,21 @@
 //  MeetingListView.swift
 //  Aumeno
 //
-//  Created by Claude Code
+//  Created by Hoya324
 //
 
 import SwiftUI
 
 struct MeetingListView: View {
     @StateObject private var viewModel = MeetingViewModel()
-    @State private var selectedMeeting: Meeting?
+    @State private var selectedSchedule: Schedule?
     @State private var floatingWindow: FloatingWindowController?
     @State private var showingOnboarding = false
     @State private var showingSlackConfig = false
     @State private var showingAddWorkspace = false
-    @State private var showingMeetingEditor = false
+    @State private var showingScheduleEditor = false
     @State private var showingKeywordManager = false
-    @State private var editingMeeting: Meeting?
+    @State private var editingSchedule: Schedule?
     @State private var selectedFilter: String? = nil  // nil = All
     @State private var availableFilters: [SlackConfiguration] = []
 
@@ -48,11 +48,11 @@ struct MeetingListView: View {
                 Divider()
                     .background(Color.gray.opacity(0.3))
 
-                // Meeting List
-                if viewModel.meetings.isEmpty {
+                // Schedule List
+                if viewModel.schedules.isEmpty {
                     emptyStateView
                 } else {
-                    meetingListView
+                    scheduleListView
                 }
 
                 // Status Bar
@@ -62,9 +62,9 @@ struct MeetingListView: View {
         .frame(minWidth: 700, minHeight: 400)
         .background(Color(red: 0.12, green: 0.12, blue: 0.12)) // #1E1E1E
         .preferredColorScheme(.dark)
-        .onChange(of: selectedMeeting) { _, newValue in
-            if let meeting = newValue {
-                openFloatingWindow(for: meeting)
+        .onChange(of: selectedSchedule) { _, newValue in
+            if let schedule = newValue {
+                openFloatingWindow(for: schedule)
             }
         }
         .sheet(isPresented: $showingOnboarding) {
@@ -75,17 +75,17 @@ struct MeetingListView: View {
         .sheet(isPresented: $showingSlackConfig) {
             SlackConfigurationView()
         }
-        .sheet(isPresented: $showingMeetingEditor) {
-            MeetingEditorView(meeting: nil) { meeting in
-                viewModel.saveMeeting(meeting)
+        .sheet(isPresented: $showingScheduleEditor) {
+            ScheduleEditorView(schedule: nil) { schedule in
+                viewModel.saveSchedule(schedule)
             }
         }
         .sheet(isPresented: $showingKeywordManager) {
             KeywordManagerView()
         }
-        .sheet(item: $editingMeeting) { meeting in
-            MeetingEditorView(meeting: meeting) { updatedMeeting in
-                viewModel.saveMeeting(updatedMeeting)
+        .sheet(item: $editingSchedule) { schedule in
+            ScheduleEditorView(schedule: schedule) { updatedSchedule in
+                viewModel.saveSchedule(updatedSchedule)
             }
         }
         .onAppear {
@@ -96,7 +96,7 @@ struct MeetingListView: View {
             }
             loadAvailableFilters()
         }
-        .onChange(of: viewModel.meetings) { _, _ in
+        .onChange(of: viewModel.schedules) { _, _ in
             loadAvailableFilters()
         }
     }
@@ -118,123 +118,80 @@ struct MeetingListView: View {
             Spacer()
 
             HStack(spacing: 10) {
-                // New Meeting button (Ghost style)
-                Button(action: { showingMeetingEditor = true }) {
+                Button(action: { showingScheduleEditor = true }) {
                     HStack(spacing: 6) {
                         Image(systemName: "plus")
-                            .font(.system(size: 12, weight: .medium))
-
-                        Text("New Meeting")
-                            .font(.system(size: 12, weight: .medium))
+                        Text("New Schedule")
                     }
-                    .foregroundColor(Color(white: 0.93))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(Color.clear)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(DarkSecondaryButtonStyle())
 
-                // Keyword Manager button (Ghost style)
                 Button(action: { showingKeywordManager = true }) {
                     Image(systemName: "tag")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Color(white: 0.93))
-                        .frame(width: 30, height: 30)
-                        .background(Color.clear)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                        )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(DarkSecondaryButtonStyle())
                 .help("Tags")
 
-                // Slack Config button (Ghost style)
                 Button(action: { showingSlackConfig = true }) {
                     Image(systemName: "gearshape")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Color(white: 0.93))
-                        .frame(width: 30, height: 30)
-                        .background(Color.clear)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                        )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(DarkSecondaryButtonStyle())
                 .help("Settings")
 
-                // Sync button (Ghost style)
                 Button(action: { viewModel.manualSync() }) {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .medium))
                             .rotationEffect(.degrees(viewModel.isSyncing ? 360 : 0))
                             .animation(
                                 viewModel.isSyncing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default,
                                 value: viewModel.isSyncing
                             )
-
                         Text("Sync")
-                            .font(.system(size: 12, weight: .medium))
                     }
-                    .foregroundColor(Color(white: 0.93))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(Color.clear)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(DarkPrimaryButtonStyle())
                 .disabled(viewModel.isSyncing)
-                .opacity(viewModel.isSyncing ? 0.5 : 1.0)
             }
         }
     }
 
-    var filteredMeetings: [Meeting] {
+    var filteredSchedules: [Schedule] {
         if let filter = selectedFilter {
             if filter == "manual" {
-                return viewModel.meetings.filter { $0.isManual }
+                return viewModel.schedules.filter { $0.isManual }
             } else {
-                return viewModel.meetings.filter { $0.slackConfigID == filter }
+                return viewModel.schedules.filter { $0.workspaceID == filter }
             }
         }
-        return viewModel.meetings
+        return viewModel.schedules
     }
 
-    // MARK: - Meeting List
+    // MARK: - Schedule List
 
-    private var meetingListView: some View {
+    private var scheduleListView: some View {
         ScrollView {
             LazyVStack(spacing: 1) {
-                ForEach(filteredMeetings) { meeting in
-                    MeetingRowView(meeting: meeting)
+                ForEach(filteredSchedules) { schedule in
+                    ScheduleRowView(schedule: schedule)
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            selectedMeeting = meeting
+                            selectedSchedule = schedule
                         }
                         .contextMenu {
                             Button("Open Note") {
-                                selectedMeeting = meeting
+                                selectedSchedule = schedule
                             }
 
-                            if meeting.isManual {
+                            if schedule.isManual {
                                 Button("Edit") {
-                                    editingMeeting = meeting
+                                    editingSchedule = schedule
                                 }
                             }
 
                             Divider()
 
                             Button("Delete", role: .destructive) {
-                                viewModel.deleteMeeting(meeting)
+                                viewModel.deleteSchedule(schedule)
                             }
                         }
                 }
@@ -251,28 +208,17 @@ struct MeetingListView: View {
                 .foregroundColor(Color.gray.opacity(0.4))
 
             VStack(spacing: 6) {
-                Text("No Messages Yet")
+                Text("No Schedules Yet")
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(Color(white: 0.93))
-
-                Text("Messages from Slack will appear here")
+                Text("Schedules from Slack will appear here")
                     .font(.system(size: 14))
-                    .foregroundColor(Color(white: 0.67))
+                    .foregroundColor(.secondary)
             }
 
             Button(action: { viewModel.manualSync() }) {
                 Text("Sync Now")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(Color(white: 0.93))
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 8)
-                    .background(Color.clear)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(DarkPrimaryButtonStyle())
             .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -283,136 +229,74 @@ struct MeetingListView: View {
     private var statusBarView: some View {
         VStack(spacing: 0) {
             Divider()
-                .background(Color.gray.opacity(0.3))
-
             HStack {
-                // Status indicator
                 HStack(spacing: 6) {
                     Circle()
                         .fill(viewModel.isSyncing ? Color.green : Color.gray.opacity(0.6))
                         .frame(width: 6, height: 6)
                         .animation(.easeInOut(duration: 0.3), value: viewModel.isSyncing)
-
                     Text(viewModel.isSyncing ? "Syncing..." : "Connected")
-                        .font(.system(size: 11))
-                        .foregroundColor(Color(white: 0.67))
                 }
-
                 Spacer()
-
-                // Meeting count
-                Text("\(viewModel.meetings.count) message\(viewModel.meetings.count != 1 ? "s" : "")")
-                    .font(.system(size: 11))
-                    .foregroundColor(Color(white: 0.67))
-
+                Text("\(viewModel.schedules.count) schedule\(viewModel.schedules.count != 1 ? "s" : "")")
                 if let error = viewModel.errorMessage {
-                    Divider()
-                        .frame(height: 12)
-                        .padding(.horizontal, 8)
-
-                    Text(error)
-                        .font(.system(size: 11))
-                        .foregroundColor(Color.orange.opacity(0.8))
-                        .lineLimit(1)
+                    Divider().frame(height: 12).padding(.horizontal, 8)
+                    Text(error).lineLimit(1)
                 }
             }
+            .font(.system(size: 11))
+            .foregroundColor(.secondary)
             .padding(.horizontal, 20)
             .padding(.vertical, 8)
-            .background(Color(red: 0.09, green: 0.09, blue: 0.09)) // Slightly darker
+            .background(Color(red: 0.09, green: 0.09, blue: 0.09))
         }
     }
 
     // MARK: - Floating Window
 
-    private func openFloatingWindow(for meeting: Meeting) {
-        // Close existing window
+    private func openFloatingWindow(for schedule: Schedule) {
         floatingWindow?.close()
-
-        // Create new floating window
-        let noteView = NotePopupView(viewModel: viewModel, meeting: meeting)
+        let noteView = NotePopupView(viewModel: viewModel, schedule: schedule)
         floatingWindow = FloatingWindowController(rootView: noteView)
         floatingWindow?.show()
-
-        // Reset selection
-        selectedMeeting = nil
+        selectedSchedule = nil
     }
 
     private func loadAvailableFilters() {
         do {
-            availableFilters = try ConfigurationManager.shared.fetchAllConfigurations()
+            availableFilters = try DatabaseManager.shared.fetchAllConfigurations()
         } catch {
             print("❌ Failed to load filters: \(error)")
         }
     }
 }
 
-// MARK: - Filter Chip
-struct FilterChip: View {
-    let title: String
-    let count: Int
-    let isSelected: Bool
-    let action: () -> Void
+// MARK: - Schedule Row
 
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-
-                Text("\(count)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(isSelected ? Color(white: 0.93) : Color(white: 0.60))
-            }
-            .foregroundColor(isSelected ? Color(white: 0.93) : Color(white: 0.67))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(isSelected ? Color.white.opacity(0.1) : Color.clear)
-            .cornerRadius(16)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? Color.gray.opacity(0.5) : Color.gray.opacity(0.3), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Meeting Row
-
-struct MeetingRowView: View {
-    let meeting: Meeting
+struct ScheduleRowView: View {
+    let schedule: Schedule
     @State private var slackConfigName: String? = "Manual"
     @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 12) {
-            // Status indicator dot
-            Circle()
-                .fill(statusColor)
-                .frame(width: 6, height: 6)
-
-            // Content
+            Circle().fill(statusColor).frame(width: 6, height: 6)
             VStack(alignment: .leading, spacing: 6) {
-                // Title
-                Text(meeting.title)
+                Text(schedule.title)
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(Color(white: 0.93))
                     .lineLimit(2)
-
-                // Metadata row
                 HStack(spacing: 12) {
-                    // Time
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock")
-                            .font(.system(size: 10))
-                            .foregroundColor(Color(white: 0.67))
-
-                        Text(meeting.formattedScheduledTime)
-                            .font(.system(size: 11))
-                            .foregroundColor(Color(white: 0.67))
-                    }
-
-                    // Source badge
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "clock")
+                                        Text(schedule.formattedStartDateTime)
+                                        if let formattedEndDateTime = schedule.formattedEndDateTime {
+                                            Text(" - ")
+                                            Text(formattedEndDateTime)
+                                        }
+                                    }                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    
                     if let configName = slackConfigName {
                         Text(configName)
                             .font(.system(size: 10))
@@ -423,72 +307,32 @@ struct MeetingRowView: View {
                             .cornerRadius(3)
                     }
 
-                    // Location indicator
-                    if let location = meeting.location, !location.isEmpty {
-                        HStack(spacing: 2) {
-                            Image(systemName: "location")
-                                .font(.system(size: 10))
-                                .foregroundColor(Color(white: 0.67))
-
-                            Text(location)
-                                .font(.system(size: 10))
-                                .foregroundColor(Color(white: 0.67))
-                                .lineLimit(1)
-                        }
+                    if let location = schedule.location, !location.isEmpty {
+                        HStack(spacing: 2) { Image(systemName: "location"); Text(location) }
+                            .font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1)
                     }
-
-                    // Link indicator
-                    if let _ = meeting.notionLink, !meeting.notionLink!.isEmpty {
-                        Image(systemName: "link")
-                            .font(.system(size: 10))
-                            .foregroundColor(Color(white: 0.67))
-                    }
-
-                    // Note indicator
-                    if meeting.hasNote {
-                        Image(systemName: "note.text")
-                            .font(.system(size: 10))
-                            .foregroundColor(Color(white: 0.67))
-                    }
+                    if let links = schedule.links, !links.isEmpty { Image(systemName: "link") }
+                    if schedule.hasNote { Image(systemName: "note.text") }
                 }
+                .foregroundColor(.secondary)
             }
-
             Spacer()
-
-            // Chevron
-            Image(systemName: "chevron.right")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(Color.gray.opacity(0.4))
+            Image(systemName: "chevron.right").foregroundColor(.secondary)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .background(isHovering ? Color.white.opacity(0.03) : Color.clear)
         .contentShape(Rectangle())
-        .overlay(
-            Rectangle()
-                .frame(height: 1)
-                .foregroundColor(Color.gray.opacity(0.15)),
-            alignment: .bottom
-        )
-        .onHover { hovering in
-            isHovering = hovering
-            if hovering {
-                NSCursor.pointingHand.push()
-            } else {
-                NSCursor.pop()
-            }
-        }
+        .overlay(Rectangle().frame(height: 1).foregroundColor(Color.gray.opacity(0.15)), alignment: .bottom)
+        .onHover { hovering in isHovering = hovering }
         .animation(.easeInOut(duration: 0.15), value: isHovering)
-        .onAppear {
-            loadSlackConfigName()
-        }
+        .onAppear(perform: loadSlackConfigName)
     }
 
     private func loadSlackConfigName() {
-        guard let configID = meeting.slackConfigID else { return }
-
+        guard let configID = schedule.workspaceID else { return }
         do {
-            if let config = try ConfigurationManager.shared.fetchConfiguration(id: configID) {
+            if let config = try DatabaseManager.shared.fetchConfiguration(id: configID) {
                 slackConfigName = config.channelName.isEmpty ? config.name : config.channelName
             }
         } catch {
@@ -497,19 +341,12 @@ struct MeetingRowView: View {
     }
 
     private var statusColor: Color {
-        if meeting.isPast {
-            return Color.gray.opacity(0.3)
-        } else if meeting.isOngoing() {
-            return Color.green
-        } else if meeting.isUpcoming(within: 30) {
-            return Color.orange.opacity(0.8)
-        } else {
-            return Color.gray.opacity(0.5)
-        }
+        if schedule.isPast { return .gray }
+        if schedule.isOngoing() { return .green }
+        if schedule.isUpcoming(within: 30) { return .orange }
+        return .gray.opacity(0.5)
     }
 }
-
-// MARK: - Preview
 
 #Preview {
     MeetingListView()

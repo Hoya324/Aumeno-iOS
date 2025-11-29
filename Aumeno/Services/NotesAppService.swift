@@ -2,7 +2,7 @@
 //  NotesAppService.swift
 //  Aumeno
 //
-//  Created by Claude Code
+//  Created by Hoya324
 //
 
 import Foundation
@@ -25,14 +25,17 @@ final class NotesAppService {
         var noteBody = ""
 
         // Add meeting details
-        noteBody += "📅 \(meeting.formattedScheduledTime)\n"
+        noteBody += "📅 \(meeting.formattedStartDateTime)\n"
 
         if let location = meeting.location, !location.isEmpty {
             noteBody += "📍 \(location)\n"
         }
 
-        if let link = meeting.notionLink, !link.isEmpty {
-            noteBody += "🔗 \(link)\n"
+        if let links = meeting.links, !links.isEmpty {
+            noteBody += "\n--- Links ---\n"
+            for link in links {
+                noteBody += "🔗 \(link)\n"
+            }
         }
 
         noteBody += "\n"

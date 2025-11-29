@@ -2,7 +2,7 @@
 //  AppDelegate.swift
 //  Aumeno
 //
-//  Created by Claude Code
+//  Created by Hoya324
 //
 
 import Cocoa
@@ -13,17 +13,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var floatingWindow: FloatingWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Request notification authorization
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if granted {
+                print("Notification permission granted.")
+            } else if let error = error {
+                print("Notification permission error: \(error.localizedDescription)")
+            } else {
+                print("Notification permission denied.")
+            }
+        }
+        
         // Set notification delegate
         UNUserNotificationCenter.current().delegate = self
 
         // MeetingScheduler 콜백 설정 (회의 시간에 자동으로 노트 창 열기)
         Task { @MainActor in
-            MeetingScheduler.shared.onMeetingTime = { [weak self] meeting in
-                self?.openNoteWindow(for: meeting.id)
+            MeetingScheduler.shared.onScheduleTime = { [weak self] schedule in
+                self?.openNoteWindow(for: schedule.id)
             }
         }
-
-        print("✅ App delegate initialized")
     }
 
     // MARK: - Notification Handling
@@ -36,8 +45,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     ) {
         let userInfo = response.notification.request.content.userInfo
 
-        if let meetingID = userInfo["meetingID"] as? String {
-            openNoteWindow(for: meetingID)
+        if let scheduleID = userInfo["scheduleID"] as? String {
+            openNoteWindow(for: scheduleID)
         }
 
         completionHandler()
@@ -55,11 +64,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // MARK: - Window Management
 
-    private func openNoteWindow(for meetingID: String) {
-        // Find meeting in database
-        guard let meetings = try? DatabaseManager.shared.fetchAllMeetings(),
-              let meeting = meetings.first(where: { $0.id == meetingID }) else {
-            print("❌ Meeting not found: \(meetingID)")
+    private func openNoteWindow(for scheduleID: String) {
+        // Find schedule in database
+        guard let schedules = try? DatabaseManager.shared.fetchAllSchedules(),
+              let schedule = schedules.first(where: { $0.id == scheduleID }) else {
             return
         }
 
@@ -70,11 +78,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         floatingWindow?.close()
 
         // Create and show floating window
-        let noteView = NotePopupView(viewModel: viewModel, meeting: meeting)
+        let noteView = NotePopupView(viewModel: viewModel, schedule: schedule)
         floatingWindow = FloatingWindowController(rootView: noteView)
         floatingWindow?.show()
-
-        print("✅ Opened note window for: \(meetingID)")
     }
 
     // MARK: - App Lifecycle

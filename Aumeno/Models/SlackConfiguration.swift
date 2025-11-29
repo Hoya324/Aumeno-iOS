@@ -1,10 +1,3 @@
-//
-//  SlackConfiguration.swift
-//  Aumeno
-//
-//  Created by Claude Code
-//
-
 import Foundation
 
 struct SlackConfiguration: Identifiable, Codable, Equatable {
@@ -16,6 +9,9 @@ struct SlackConfiguration: Identifiable, Codable, Equatable {
     var keywords: [String] // 필터링할 키워드들
     var isEnabled: Bool
     var createdAt: Date
+    var color: String // 워크스페이스 색상 (Hex, 예: "#FF5733")
+    var userID: String? // Slack User ID (멘션 감지용, 예: "U123456")
+    var teamID: String? // Slack Workspace ID (딥링크 생성용, 예: "T123456")
 
     init(
         id: String = UUID().uuidString,
@@ -25,7 +21,10 @@ struct SlackConfiguration: Identifiable, Codable, Equatable {
         channelID: String,
         keywords: [String] = [],
         isEnabled: Bool = true,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        color: String = "#808080",
+        userID: String? = nil,
+        teamID: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -35,6 +34,9 @@ struct SlackConfiguration: Identifiable, Codable, Equatable {
         self.keywords = keywords
         self.isEnabled = isEnabled
         self.createdAt = createdAt
+        self.color = color
+        self.userID = userID
+        self.teamID = teamID
     }
 
     // 키워드가 비어있으면 모든 메시지 가져오기
@@ -69,6 +71,8 @@ extension SlackConfiguration {
         channelName: "general",
         token: "xoxp-your-token-here",
         channelID: "C0000000000",
-        keywords: ["📅 Meeting:", "[Meeting]"]
+        keywords: ["📅 Meeting:", "[Meeting]"],
+        color: "#4A90E2",
+        teamID: "T0000000000" // Sample team ID
     )
 }

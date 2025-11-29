@@ -2,7 +2,7 @@
 //  KeywordManagerView.swift
 //  Aumeno
 //
-//  Created by Claude Code
+//  Created by Hoya324
 //
 
 import SwiftUI
@@ -250,7 +250,7 @@ struct KeywordManagerView: View {
 
     private func loadKeywords() {
         do {
-            let fetchedConfigs = try ConfigurationManager.shared.fetchAllConfigurations()
+            let fetchedConfigs = try DatabaseManager.shared.fetchAllConfigurations()
 
             // Remove duplicates by ID (just in case)
             var uniqueConfigs: [SlackConfiguration] = []
@@ -286,7 +286,7 @@ struct KeywordManagerView: View {
             for var config in configurations where config.isEnabled {
                 if !config.keywords.contains(keyword) {
                     config.keywords.append(keyword)
-                    try ConfigurationManager.shared.updateConfiguration(config)
+                    try DatabaseManager.shared.updateConfiguration(config)
                 }
             }
 
@@ -303,7 +303,7 @@ struct KeywordManagerView: View {
             for var config in configurations {
                 if let index = config.keywords.firstIndex(of: keyword) {
                     config.keywords.remove(at: index)
-                    try ConfigurationManager.shared.updateConfiguration(config)
+                    try DatabaseManager.shared.updateConfiguration(config)
                 }
             }
 
